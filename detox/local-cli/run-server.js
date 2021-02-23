@@ -1,4 +1,4 @@
-const DetoxServer = require('../src/server/DetoxServer');
+const DetoxServer = require('../src/server/DetoxServer2');
 
 module.exports.command = 'run-server';
 module.exports.desc = 'Start a standalone Detox server';
@@ -27,8 +27,8 @@ module.exports.handler = async function runServer(argv) {
     throw new Error(`The port should be between 1 and 65535, got ${argv.port}`)
   }
 
-  new DetoxServer({
+  await new DetoxServer({
     port: +argv.port,
     standalone: true,
-  });
+  }).open();
 };

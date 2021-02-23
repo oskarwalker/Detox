@@ -9,7 +9,7 @@ const AsyncEmitter = require('./utils/AsyncEmitter');
 const MissingDetox = require('./utils/MissingDetox');
 const Client = require('./client/Client');
 const { InvocationManager } = require('./invoke');
-const DetoxServer = require('./server/DetoxServer');
+const DetoxServer = require('./server/DetoxServer2');
 const ArtifactsManager = require('./artifacts/ArtifactsManager');
 const log = logger.child({ __filename });
 const driverRegistry = require('./devices/DriverRegistry').default;
@@ -141,6 +141,7 @@ class Detox {
       this._server = new DetoxServer({
         port: new URL(sessionConfig.server).port,
       });
+      await this._server.open();
     }
 
     this._client = new Client(sessionConfig);
