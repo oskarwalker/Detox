@@ -176,6 +176,28 @@ class SetInstrumentsRecordingState extends Action {
   }
 }
 
+class AppDisconnected extends Action {
+  constructor() {
+    super('');
+    this.messageId = -9998;
+  }
+
+  handle(response) {
+    this.expectResponseOfType(response, 'appDisconnected');
+  }
+}
+
+class AppConnected extends Action {
+  constructor() {
+    super('');
+    this.messageId = -9999;
+  }
+
+  handle(response) {
+    this.expectResponseOfType(response, 'appConnected');
+  }
+}
+
 class AppWillTerminateWithError extends Action {
   constructor() {
     super('AppWillTerminateWithError');
@@ -233,6 +255,8 @@ module.exports = {
   Shake,
   SetOrientation,
   SetInstrumentsRecordingState,
+  AppDisconnected,
+  AppConnected,
   AppWillTerminateWithError,
   AppNonresponsive,
   CaptureViewHierarchy,

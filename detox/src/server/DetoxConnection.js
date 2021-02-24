@@ -1,5 +1,5 @@
 const _ = require('lodash');
-const log = require('../utils/logger').child({ __filename });
+const logger = require('../utils/logger');
 const { WebSocket } = require('ws');
 
 const J = (obj) => JSON.stringify(obj, null, 2);
@@ -7,19 +7,25 @@ const J = (obj) => JSON.stringify(obj, null, 2);
 class DetoxConnection {
   /**
    * @param {DetoxSessionManager} sessionManager
-   * @param {WebSocket} ws
+   * @param {WebSocket} webSocket
    */
-  constructor(sessionManager, ws) {
+  constructor(sessionManager, webSocket) {
     this._onMessage = this._onMessage.bind(this);
     this._onError = this._onError.bind(this);
     this._onClose = this._onClose.bind(this);
 
     this.__sessionMemo = null;
     this._sessionManager = sessionManager;
-    this._ws = ws;
-    this._ws.on('message', this._onMessage);
-    this._ws.on('error', this._onError);
-    this._ws.on('close', this._onClose);
+    this._webSocket = webSocket;
+    this._webSocket.on('message', this._onMessage);
+    this._webSocket.on('error', this._onError);
+    this._webSocket.on('close', this._onClose);
+
+    const { remoteAddress, remotePort } = webSocket._socket;
+    this._log = logger.child({
+      __filename: 'DetoxConnection',
+      trackingId: `${remoteAddress}:${remotePort}`,
+    })
 
     this.__sendActionPromise = Promise.resolve();
   }
@@ -28,6 +34,10 @@ class DetoxConnection {
     this.__sendActionPromise = this.__sendActionPromise.then(() => {
       return this._doSendAction(action);
     });
+  }
+
+  get webSocket() {
+    return this._webSocket;
   }
 
   /** @type {DetoxSession | null} **/
@@ -49,11 +59,13 @@ class DetoxConnection {
 
   _doSendAction(action) {
     return new Promise((resolve) => {
-      this._ws.send(JSON.stringify(action) + '\n ', {}, resolve);
+      this._webSocket.send(JSON.stringify(action) + '\n ', {}, resolve);
     });
   }
 
   _onMessage(data) {
+    this._log.trace({ event: 'MSG' }, data instanceof Buffer ? data.toString('utf8') : data);
+
     this.__sessionMemo = null; // invalidate cache
 
     const action = _.attempt(() => JSON.parse(data));
@@ -99,6 +111,8 @@ class DetoxConnection {
     switch (action.type) {
       case 'login':
         return this._handleLoginAction(action);
+      // case 'currentStatus':
+      //   return this._handleCurrentStatus(action);
       default:
         this._assertActiveSession(action);
         this._session.carry(this, action);
@@ -135,6 +149,15 @@ class DetoxConnection {
     }
 
     this._sessionManager.registerSession(this, action.params);
+    this.sendAction({
+      ...action,
+      type: 'loginSuccess',
+    });
+
+    this._log = this._log.child({
+      role: this._role,
+      sessionId: this._sessionId,
+    })
   }
 
   _assertActionHasType(action) {

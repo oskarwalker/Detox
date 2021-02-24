@@ -1,7 +1,7 @@
 const _ = require('lodash');
 const AsyncWebSocket = require('./AsyncWebSocket');
 const actions = require('./actions/actions');
-const argparse = require('../utils/argparse');
+const Deferred = require('../utils/Deferred');
 const log = require('../utils/logger').child({ __filename });
 const { asError, createErrorWithUserStack, replaceErrorStack } = require('../utils/errorUtils');
 
@@ -14,6 +14,21 @@ class Client {
     this.slowInvocationTimeout = config.debugSynchronization;
     this.successfulTestRun = true; // flag for cleanup
     this.pandingAppCrash;
+
+    this._whenConnected = new Deferred();
+
+    this.setActionListener(new actions.AppDisconnected(), () => {
+      this.isConnected = false;
+      this._whenConnected = new Deferred();
+    });
+
+    this.setActionListener(new actions.AppConnected(), () => {
+      this.isConnected = true;
+
+      if (this._whenConnected) {
+        this._whenConnected.resolve();
+      }
+    });
 
     this.setActionListener(new actions.AppWillTerminateWithError(), (response) => {
       this.pandingAppCrash = response.params.errorDetails;
@@ -31,8 +46,8 @@ class Client {
   }
 
   async waitUntilReady() {
+    await this._whenConnected.promise;
     await this.sendAction(new actions.Ready());
-    this.isConnected = true;
   }
 
   async waitForBackground() {
@@ -131,7 +146,7 @@ class Client {
   }
 
   async sendAction(action) {
-    if (this.slowInvocationTimeout && action.type !== 'currentStatus') {
+    if (this.slowInvocationTimeout && action.type !== 'login' && action.type !== 'currentStatus') {
       this.slowInvocationStatusHandler = this.slowInvocationStatus();
     }
 

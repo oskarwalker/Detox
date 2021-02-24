@@ -1,3 +1,4 @@
+const log = require('../utils/logger').child({ __filename });
 const DetoxConnection = require('./DetoxConnection');
 const DetoxSession = require('./DetoxSession');
 
@@ -24,11 +25,13 @@ class DetoxSessionManager {
     let session = this._sessionsById.get(sessionId);
     if (!session) {
       session = new DetoxSession(sessionId);
-
       this._sessionsById.set(sessionId, session);
-      this._sessionsByConnection.set(connection, session);
+      log.debug({ event: 'SESSION_CREATED' }, `${sessionId}:${role}`);
+    } else {
+      log.debug({ event: 'SESSION_JOINED' }, `${sessionId}:${role}`);
     }
 
+    this._sessionsByConnection.set(connection, session);
     session[role] = connection;
     return session;
   }
@@ -48,8 +51,8 @@ class DetoxSessionManager {
       }
     }
 
-    if (this._connectionsByWs.has(connection.socket)) {
-      this._connectionsByWs.delete(connection.socket);
+    if (this._connectionsByWs.has(connection.webSocket)) {
+      this._connectionsByWs.delete(connection.webSocket);
     } else {
       throw new Error('Cannot unregister an unknown connection');
     }
