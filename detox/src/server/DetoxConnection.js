@@ -135,7 +135,9 @@ class DetoxConnection {
     if (this._session && this._role === 'tester') {
       this.sendAction({
         type: 'error',
-        error: error.message,
+        params: {
+          error: error.message,
+        },
         messageId: action.messageId
       });
     } else {
