@@ -1,3 +1,6 @@
+const DetoxInvariantError = require('../errors/DetoxInvariantError');
+const log = require('../utils/logger').child({ __filename });
+
 class DetoxSession {
   /**
    * @param {string} id
@@ -8,6 +11,8 @@ class DetoxSession {
     this._tester = null;
     /** @type {DetoxConnection} */
     this._app = null;
+
+    log.trace({ event: 'SESSION_CREATED' }, `created session ${id}`);
   }
 
   get id() {
@@ -48,85 +53,63 @@ class DetoxSession {
     return !this._tester && !this._app;
   }
 
-  getRole(connection) {
-    if (connection === this.tester) {
-      return 'tester';
-    }
-
-    if (connection === this.app) {
-      return 'app';
-    }
-
-    throw new Error('AssertionError: connection should be either this.app or this.tester');
-  }
-
-  getDestination(connection) {
-    const role = this.getRole(connection);
-    return role === 'tester' ? this.app : this.tester;
-  }
-
-  carry(from, message) {
-    const to = this.getDestination(from);
-    if (!to) {
-      throw new Error('Cannot forward the message to the app.');
-    }
-
-    to.sendAction(message);
-  }
-
   disconnect(connection) {
     if (!connection) {
-      throw new Error('Assert connection != null');
+      return this._invariant(`DetoxSession(${this.id}).prototype.disconnect(connection) expects a non-null argument.`);
     }
 
-    const role = this.getRole(connection);
-    this[role] = null;
+    if (connection === this.tester) {
+      this.tester = null;
+    } else if (connection === this.app) {
+      this.app = null;
+    } else {
+      this._invariant(`cannot disconnect an unknown connection from the session ${this.id}`);
+    }
   }
 
   _assertAppIsNotConnected() {
     if (this._app) {
-      throw new Error('AssertionError: the app already is connected');
+      this._invariant(`the app is already connected to the session ${this.id}`);
     }
   }
 
   _assertTesterIsNotConnected() {
     if (this._tester) {
-      throw new Error('AssertionError: the tester already is connected');
+      this._invariant(`the tester is already connected to the session ${this.id}`);
     }
   }
 
   _notifyAboutAppConnect() {
+    log.trace({ event: 'SESSION_JOINED' }, `app joined session ${this.id}`);
+
     if (!this._tester) {
       return;
     }
 
     this._tester.sendAction({
       type: 'appConnected',
-      messageId: -9999,
     });
   }
 
   _notifyAboutAppDisconnect() {
+    log.trace({ event: 'SESSION_TORN' }, `app exited session ${this.id}`);
+
     if (!this._tester) {
       return;
     }
 
     this._tester.sendAction({
       type: 'appDisconnected',
-      messageId: -9998,
     });
   }
 
   _notifyAboutTesterConnect() {
-    if (!this._app) {
-      return;
-    }
-
-    // So far there is no need in it.
-    // Neither iOS, nor Android implement this behavior.
+    log.trace({ event: 'SESSION_JOINED' }, `tester joined session ${this.id}`);
   }
 
   _notifyAboutTesterDisconnect() {
+    log.trace({ event: 'SESSION_TORN' }, `tester exited session ${this.id}`);
+
     if (!this._app) {
       return;
     }
@@ -134,6 +117,10 @@ class DetoxSession {
     this._app.sendAction({
       type: 'testerDisconnected',
     });
+  }
+
+  _invariant(message) {
+    log.error(new DetoxInvariantError(message).toString());
   }
 }
 

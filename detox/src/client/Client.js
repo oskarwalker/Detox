@@ -14,21 +14,21 @@ class Client {
     this._slowInvocationTimeout = config.debugSynchronization;
     this.successfulTestRun = true; // flag for cleanup
     this.pandingAppCrash = undefined;
-
     this.ws = new AsyncWebSocket(config.server);
-    this.ws.setEventCallback('appDisconnected', () => {
+
+    this.setEventCallback('appDisconnected', () => {
       this._whenConnected = new Deferred();
       this._whenReady = new Deferred();
       this.ws.rejectAll(new Error('The app has unexpectedly disconnected from Detox server'));
     });
-    this.ws.setEventCallback('appConnected', () => {
+    this.setEventCallback('appConnected', () => {
       this._whenConnected.resolve();
     });
-    this.ws.setEventCallback('ready', () => {
+    this.setEventCallback('ready', () => {
       this._whenReady.resolve();
     });
-    this.ws.setEventCallback('AppNonresponsiveDetected', this._onNonresnponsivenessEvent.bind(this));
-    this.ws.setEventCallback('AppWillTerminateWithError', ({ params }) => {
+    this.setEventCallback('AppNonresponsiveDetected', this._onNonresnponsivenessEvent.bind(this));
+    this.setEventCallback('AppWillTerminateWithError', ({ params }) => {
       this.pandingAppCrash = params.errorDetails;
       this.ws.rejectAll(this.pandingAppCrash);
     });

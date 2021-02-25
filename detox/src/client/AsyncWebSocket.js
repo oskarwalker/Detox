@@ -45,12 +45,12 @@ class AsyncWebSocket {
         if (pendingPromise) {
           pendingPromise.resolve(response.data);
           delete this.inFlightPromises[data.messageId];
-        }
-
-        const eventCallbacks = this.eventCallbacks[data.type];
-        if (!_.isEmpty(eventCallbacks)) {
-          for (const callback of eventCallbacks) {
-            callback(data);
+        } else {
+          const eventCallbacks = this.eventCallbacks[data.type];
+          if (!_.isEmpty(eventCallbacks)) {
+            for (const callback of eventCallbacks) {
+              callback(data);
+            }
           }
         }
       };

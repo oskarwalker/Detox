@@ -1,13 +1,15 @@
 const _ = require('lodash');
-const logger = require('../utils/logger');
 const { WebSocket } = require('ws');
-
-const J = (obj) => JSON.stringify(obj, null, 2);
-const SEND_OPTIONS = {};
+const DetoxRuntimeError = require('../errors/DetoxRuntimeError');
+const DetoxInvariantError = require('../errors/DetoxInvariantError');
+const AnonymousConnectionHandler = require('./handlers/AnonymousConnectionHandler');
+const logger = require('../utils/logger').child({ __filename });
 
 const EVENTS = {
   GET: { event: 'GET_FROM' },
   SEND: { event: 'SEND_TO' },
+  ERROR: { event: 'ERROR' },
+  SOCKET_ERROR: { event: 'SOCKET_ERROR' },
 };
 
 class DetoxConnection {
@@ -21,170 +23,90 @@ class DetoxConnection {
     this._onError = this._onError.bind(this);
     this._onClose = this._onClose.bind(this);
 
-    this.__sessionMemo = null;
+    this._sendActionPromise = Promise.resolve();
+
+    this._log = logger.child({ trackingId: socket.remotePort });
     this._sessionManager = sessionManager;
     this._webSocket = webSocket;
     this._webSocket.on('message', this._onMessage);
     this._webSocket.on('error', this._onError);
     this._webSocket.on('close', this._onClose);
 
-    const { remotePort } = socket;
-    this._log = logger.child({
-      __filename: 'DetoxConnection',
-      trackingId: remotePort,
-    })
+    const log = this._log;
+    this._handler = new AnonymousConnectionHandler({
+      api: {
+        get log() { return log; },
+        appendLogDetails: (details) => { this._log = this._log.child(details); },
 
-    this.__sendActionPromise = Promise.resolve();
+        registerSession: (params) => this._sessionManager.registerSession(this, params),
+        setHandler: (handler) => { this._handler = handler; },
+        sendAction: (action) => this.sendAction(action),
+      },
+    });
   }
 
   sendAction(action) {
-    this.__sendActionPromise = this.__sendActionPromise.then(() => {
+    this._sendActionPromise = this._sendActionPromise.finally(() => {
       return this._doSendAction(action);
     });
 
-    return this.__sendActionPromise;
-  }
-
-  get webSocket() {
-    return this._webSocket;
-  }
-
-  /** @type {DetoxSession | null} **/
-  get _session() {
-    if (!this.__sessionMemo) {
-      this.__sessionMemo = this._sessionManager.getSession(this);
-    }
-
-    return this.__sessionMemo;
-  }
-
-  get _role() {
-    return this._session ? this._session.getRole(this) : undefined;
-  }
-
-  get _sessionId() {
-    return this._session ? this._session.id : undefined;
+    return this._sendActionPromise;
   }
 
   _doSendAction(action) {
     const messageAsString = JSON.stringify(action);
+    this._log.trace(EVENTS.SEND, messageAsString);
 
-    return new Promise((resolve) => {
-      this._log.trace(EVENTS.SEND, messageAsString);
-      this._webSocket.send(messageAsString + '\n ', SEND_OPTIONS, resolve);
+    return new Promise((resolve, reject) => {
+      this._webSocket.send(messageAsString + '\n ', (err) => {
+        err ? reject(err) : resolve();
+      });
     });
   }
 
-  _onMessage(data) {
-    this._log.trace(EVENTS.GET, data instanceof Buffer ? data.toString('utf8') : data);
-
-    this.__sessionMemo = null; // invalidate cache
-
-    const action = _.attempt(() => JSON.parse(data));
-    if (_.isError(action)) {
-      return this._handleInvalidMessage(data);
-    }
+  _onMessage(rawData) {
+    const data = _.isString(rawData) ? rawData : rawData.toString('utf8');
+    this._log.trace(EVENTS.GET, data);
 
     try {
-      this._handleAction(action);
-    } catch (e) {
-      this._handleActionError(e, action);
+      const action = _.attempt(() => JSON.parse(data));
+
+      if (_.isError(action)) {
+        throw new DetoxRuntimeError({
+          message: 'The payload received is not a valid JSON.',
+          hint: DetoxInvariantError.reportIssue,
+          debugInfo: data,
+        });
+      }
+
+      if (!action.type) {
+        throw new DetoxRuntimeError({
+          message: 'Cannot process an action without a type.',
+          hint: DetoxInvariantError.reportIssue,
+          debugInfo: action,
+        });
+      }
+
+      try {
+        this._handler.handle(action);
+      } catch (handlerError) {
+        if (this._handler.onError) {
+          this._handler.onError(handlerError, action);
+        } else {
+          throw handlerError;
+        }
+      }
+    } catch (error) {
+      this._log.warn({ ...EVENTS.ERROR, err: error }, `${error}`);
     }
   }
 
   _onError(e) {
-    this.__sessionMemo = null; // invalidate cache
-
-    const role = this._role;
-    const sessionId = this._sessionId;
-    const details = {
-      event: 'WEBSOCKET_ERROR',
-      role,
-      sessionId,
-    };
-
-    log.warn(details, `${e && e.message} (role=${role}, session=${sessionId})`);
+    this._log.warn(EVENTS.SOCKET_ERROR, e && e.message || `${e}`);
   }
 
   _onClose() {
-    this.__sessionMemo = null; // invalidate cache
-
-    this._sessionManager.unregisterConnection(this);
-  }
-
-  _handleInvalidMessage(data) {
-    const error = new Error('The payload received is not a valid JSON:\n' + data);
-    return this._handleActionError(error, {});
-  }
-
-  _handleAction(action) {
-    this._assertActionHasType(action);
-
-    switch (action.type) {
-      case 'login':
-        return this._handleLoginAction(action);
-      // case 'currentStatus':
-      //   return this._handleCurrentStatus(action);
-      default:
-        this._assertActiveSession(action);
-        this._session.carry(this, action);
-    }
-  }
-
-  _handleActionError(error, action) {
-    if (this._session && this._role === 'tester') {
-      this.sendAction({
-        type: 'error',
-        params: {
-          error: error.message,
-        },
-        messageId: action.messageId
-      });
-    } else {
-      log.warn({ event: 'MESSAGE_ERROR', err: error }, `${error}`);
-    }
-  }
-
-  _handleLoginAction(action) {
-    if (!action.params) {
-      throw new Error(`Invalid login action received, it has no .params:\n${J(action)}`);
-    }
-
-    if (!['app', 'tester'].includes(action.params.role)) {
-      throw new Error(`Invalid login action received, it has invalid .role:\n${J(action)}`);
-    }
-
-    if (!action.params.sessionId) {
-      throw new Error(`Invalid login action received, it has no sessionId:\n${J(action)}`);
-    }
-
-    if (typeof action.params.sessionId !== 'string') {
-      throw new Error(`Invalid login action received, it has a non-string sessionId:\n${J(action)}`);
-    }
-
-    this._sessionManager.registerSession(this, action.params);
-    this.sendAction({
-      ...action,
-      type: 'loginSuccess',
-    });
-
-    this._log = this._log.child({
-      role: this._role,
-      sessionId: this._sessionId,
-      trackingId: this._role,
-    })
-  }
-
-  _assertActionHasType(action) {
-    if (!action.type) {
-      throw new Error(`Invalid action received, it has no type, cannot process:\n${J(action)}`);
-    }
-  }
-
-  _assertActiveSession(action) {
-    if (!this._session) {
-      throw new Error(`Action dispatched too early, there is no session to use:\n${J(action)}`);
-    }
+    this._sessionManager.unregisterConnection(this._webSocket);
   }
 }
 

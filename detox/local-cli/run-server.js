@@ -1,4 +1,4 @@
-const DetoxServer = require('../src/server/DetoxServer2');
+const DetoxServer = require('../src/server/DetoxServer');
 
 module.exports.command = 'run-server';
 module.exports.desc = 'Start a standalone Detox server';
