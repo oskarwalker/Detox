@@ -7,33 +7,35 @@ const { asError, createErrorWithUserStack, replaceErrorStack } = require('../uti
 
 class Client {
   constructor(config) {
-    this.isConnected = false;
-    this.configuration = config;
-    this.ws = new AsyncWebSocket(config.server);
-    this.slowInvocationStatusHandler = null;
-    this.slowInvocationTimeout = config.debugSynchronization;
-    this.successfulTestRun = true; // flag for cleanup
-    this.pandingAppCrash;
-
     this._whenConnected = new Deferred();
+    this._whenReady = new Deferred();
+    this.configuration = config;
+    this._slowInvocationStatusHandle = null;
+    this._slowInvocationTimeout = config.debugSynchronization;
+    this.successfulTestRun = true; // flag for cleanup
+    this.pandingAppCrash = undefined;
 
-    this.setActionListener(new actions.AppDisconnected(), () => {
-      this.isConnected = false;
+    this.ws = new AsyncWebSocket(config.server);
+    this.ws.setEventCallback('appDisconnected', () => {
       this._whenConnected = new Deferred();
+      this._whenReady = new Deferred();
+      this.ws.rejectAll(new Error('The app has unexpectedly disconnected from Detox server'));
     });
-
-    this.setActionListener(new actions.AppConnected(), () => {
-      this.isConnected = true;
-
-      if (this._whenConnected) {
-        this._whenConnected.resolve();
-      }
+    this.ws.setEventCallback('appConnected', () => {
+      this._whenConnected.resolve();
     });
-
-    this.setActionListener(new actions.AppWillTerminateWithError(), (response) => {
-      this.pandingAppCrash = response.params.errorDetails;
+    this.ws.setEventCallback('ready', () => {
+      this._whenReady.resolve();
+    });
+    this.ws.setEventCallback('AppNonresponsiveDetected', this._onNonresnponsivenessEvent.bind(this));
+    this.ws.setEventCallback('AppWillTerminateWithError', ({ params }) => {
+      this.pandingAppCrash = params.errorDetails;
       this.ws.rejectAll(this.pandingAppCrash);
     });
+  }
+
+  get isConnected() {
+    return this._whenConnected.isResolved();
   }
 
   async connect() {
@@ -42,12 +44,20 @@ class Client {
   }
 
   async reloadReactNative() {
+    this._whenReady = new Deferred();
     await this.sendAction(new actions.ReloadReactNative());
   }
 
   async waitUntilReady() {
     await this._whenConnected.promise;
-    await this.sendAction(new actions.Ready());
+
+    // TODO: optimize traffic (!) - we can just listen for 'ready' event
+    // if app always sends it upon load completion. Then this will suffice:
+    // await this._whenReady.promise;
+
+    if (!this._whenReady.isResolved()) {
+      await this.sendAction(new actions.Ready());
+    }
   }
 
   async waitForBackground() {
@@ -65,12 +75,12 @@ class Client {
   }
 
   async cleanup() {
-    clearTimeout(this.slowInvocationStatusHandler);
+    clearTimeout(this._slowInvocationStatusHandle);
     if (this.isConnected && !this.pandingAppCrash) {
       if(this.ws.isOpen()) {
         await this.sendAction(new actions.Cleanup(this.successfulTestRun));
       }
-      this.isConnected = false;
+      this._whenConnected = new Deferred();
     }
 
     if (this.ws.isOpen()) {
@@ -79,7 +89,7 @@ class Client {
   }
 
   async currentStatus() {
-    await this.sendAction(new actions.CurrentStatus());
+    return await this.sendAction(new actions.CurrentStatus());
   }
 
   async setSyncSettings(params) {
@@ -130,45 +140,35 @@ class Client {
     return crash;
   }
 
-  setNonresponsivenessListener(clientCallback) {
-    this.setActionListener(new actions.AppNonresponsive(), (event) => clientCallback(event.params));
-  }
+  async sendAction(action) {
+    let handledResponse;
 
-  setActionListener(action, clientCallback) {
-    this.setEventCallback(action.type, (response) => {
-      action.handle(response);
-      clientCallback(response);
-    });
+    if (this._slowInvocationTimeout && action.type !== 'login' && action.type !== 'currentStatus') {
+      this._slowInvocationStatusHandle = this._scheduleSlowInvocationQuery();
+    }
+
+    try {
+      const response = await this.ws.send(action, action.messageId);
+      const parsedResponse = JSON.parse(response);
+      handledResponse = await action.handle(parsedResponse);
+    } finally {
+      clearTimeout(this._slowInvocationStatusHandle);
+    }
+
+    return handledResponse;
   }
 
   setEventCallback(event, callback) {
     this.ws.setEventCallback(event, callback);
   }
 
-  async sendAction(action) {
-    if (this.slowInvocationTimeout && action.type !== 'login' && action.type !== 'currentStatus') {
-      this.slowInvocationStatusHandler = this.slowInvocationStatus();
-    }
-
-    const response = await this.ws.send(action, action.messageId);
-    const parsedResponse = JSON.parse(response);
-    let handledResponse;
-    try {
-      handledResponse = await action.handle(parsedResponse);
-    } finally {
-      clearTimeout(this.slowInvocationStatusHandler);
-    }
-
-    return handledResponse;
-  }
-
-  slowInvocationStatus() {
+  _scheduleSlowInvocationQuery() {
     return setTimeout(async () => {
-      if (this.ws.isOpen()) {
-        const status = await this.currentStatus();
-        this.slowInvocationStatusHandler = this.slowInvocationStatus();
+      if (this.isConnected) {
+        log.info({ event: 'CurrentStatus' }, await this.currentStatus());
+        this._slowInvocationStatusHandle = this._scheduleSlowInvocationQuery();
       }
-    }, this.slowInvocationTimeout);
+    }, this._slowInvocationTimeout);
   }
 
   dumpPendingRequests({testName} = {}) {
@@ -193,6 +193,18 @@ class Client {
 
     log.warn({ event: 'PENDING_REQUESTS'}, dump);
     this.ws.resetInFlightPromises();
+  }
+
+  _onNonresnponsivenessEvent({ params }) {
+    const message = [
+      'Application nonresponsiveness detected!',
+      'On Android, this could imply an ANR alert, which evidently causes tests to fail.',
+      'Here\'s the native main-thread stacktrace from the device, to help you out (refer to device logs for the complete thread dump):',
+      params.threadDump,
+      'Refer to https://developer.android.com/training/articles/perf-anr for further details.'
+    ].join('\n');
+
+    log.warn({ event: 'APP_NONRESPONSIVE' }, message);
   }
 }
 

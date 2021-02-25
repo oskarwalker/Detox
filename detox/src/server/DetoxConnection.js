@@ -3,6 +3,12 @@ const logger = require('../utils/logger');
 const { WebSocket } = require('ws');
 
 const J = (obj) => JSON.stringify(obj, null, 2);
+const SEND_OPTIONS = {};
+
+const EVENTS = {
+  GET: { event: 'GET_FROM' },
+  SEND: { event: 'SEND_TO' },
+};
 
 class DetoxConnection {
   /**
@@ -22,10 +28,10 @@ class DetoxConnection {
     this._webSocket.on('error', this._onError);
     this._webSocket.on('close', this._onClose);
 
-    const { remoteAddress, remotePort } = socket;
+    const { remotePort } = socket;
     this._log = logger.child({
       __filename: 'DetoxConnection',
-      trackingId: `${remoteAddress}:${remotePort}`,
+      trackingId: remotePort,
     })
 
     this.__sendActionPromise = Promise.resolve();
@@ -35,6 +41,8 @@ class DetoxConnection {
     this.__sendActionPromise = this.__sendActionPromise.then(() => {
       return this._doSendAction(action);
     });
+
+    return this.__sendActionPromise;
   }
 
   get webSocket() {
@@ -59,13 +67,16 @@ class DetoxConnection {
   }
 
   _doSendAction(action) {
+    const messageAsString = JSON.stringify(action);
+
     return new Promise((resolve) => {
-      this._webSocket.send(JSON.stringify(action) + '\n ', {}, resolve);
+      this._log.trace(EVENTS.SEND, messageAsString);
+      this._webSocket.send(messageAsString + '\n ', SEND_OPTIONS, resolve);
     });
   }
 
   _onMessage(data) {
-    this._log.trace({ event: 'MSG' }, data instanceof Buffer ? data.toString('utf8') : data);
+    this._log.trace(EVENTS.GET, data instanceof Buffer ? data.toString('utf8') : data);
 
     this.__sessionMemo = null; // invalidate cache
 
@@ -158,6 +169,7 @@ class DetoxConnection {
     this._log = this._log.child({
       role: this._role,
       sessionId: this._sessionId,
+      trackingId: this._role,
     })
   }
 
