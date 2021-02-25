@@ -13,7 +13,7 @@ class DetoxServer2 {
 
   async open() {
     await this._startListening();
-    log.info(`server listening on localhost:${this._wss.options.port}...`);
+    log.debug(`Detox server listening on localhost:${this._wss.options.port}...`);
   }
 
   async close() {
@@ -31,8 +31,12 @@ class DetoxServer2 {
     });
   }
 
-  _onConnection(ws) {
-    this._sessionManager.registerConnection(ws);
+  /**
+   * @param {WebSocket} ws
+   * @param {IncomingMessage} req
+   */
+  _onConnection(ws, req) {
+    this._sessionManager.registerConnection(ws, req.socket);
   }
 
   _closeWithTimeout(timeoutValue) {

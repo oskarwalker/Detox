@@ -12,11 +12,20 @@ class DetoxSessionManager {
     this._sessionsById = new Map();
   }
 
-  registerConnection(ws) {
-    this._assertSocketIsNotUsed(ws);
+  /**
+   * @param {WebSocket} ws
+   * @param {Socket} socket
+   */
+  registerConnection(webSocket, socket) {
+    this._assertWebSocketIsNotUsed(webSocket);
 
-    const connection = new DetoxConnection(this, ws);
-    this._connectionsByWs.set(ws, connection);
+    const connection = new DetoxConnection({
+      sessionManager: this,
+      webSocket,
+      socket,
+    });
+
+    this._connectionsByWs.set(webSocket, connection);
   }
 
   registerSession(connection, { role, sessionId }) {
@@ -58,7 +67,7 @@ class DetoxSessionManager {
     }
   }
 
-  _assertSocketIsNotUsed(ws) {
+  _assertWebSocketIsNotUsed(ws) {
     if (this._connectionsByWs.has(ws)) {
       throw new Error('Cannot register the same connection twice');
     }

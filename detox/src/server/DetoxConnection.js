@@ -8,8 +8,9 @@ class DetoxConnection {
   /**
    * @param {DetoxSessionManager} sessionManager
    * @param {WebSocket} webSocket
+   * @param {Socket} socket
    */
-  constructor(sessionManager, webSocket) {
+  constructor({ sessionManager, webSocket, socket }) {
     this._onMessage = this._onMessage.bind(this);
     this._onError = this._onError.bind(this);
     this._onClose = this._onClose.bind(this);
@@ -21,7 +22,7 @@ class DetoxConnection {
     this._webSocket.on('error', this._onError);
     this._webSocket.on('close', this._onClose);
 
-    const { remoteAddress, remotePort } = webSocket._socket;
+    const { remoteAddress, remotePort } = socket;
     this._log = logger.child({
       __filename: 'DetoxConnection',
       trackingId: `${remoteAddress}:${remotePort}`,
