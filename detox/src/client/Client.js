@@ -151,7 +151,7 @@ class Client {
       const response = await this.ws.send(action, action.messageId);
       const parsedResponse = JSON.parse(response);
       if (parsedResponse && parsedResponse.type === 'error') {
-        const message = _.get(parsedResponse.params, 'message', 'Unknown Detox Server error');
+        const message = _.get(parsedResponse.params, 'error', 'Unknown Detox Server error');
         throw new Error(message);
       }
 

@@ -3,10 +3,10 @@ const WebSocket = require('ws');
 const log = require('../utils/logger').child({ __filename, class: 'AsyncWebSocket' });
 
 const EVENTS = {
-  OPEN: Object.freeze({ event: 'WEBSOCKET_OPEN' }),
-  ERROR: Object.freeze({ event: 'WEBSOCKET_ERROR' }),
-  MESSAGE: Object.freeze({ event: 'WEBSOCKET_MESSAGE' }),
-  SEND: Object.freeze({ event: 'WEBSOCKET_SEND' }),
+  OPEN: Object.freeze({ event: 'OPEN' }),
+  ERROR: Object.freeze({ event: 'ERROR' }),
+  MESSAGE: Object.freeze({ event: 'MESSAGE' }),
+  SEND: Object.freeze({ event: 'SEND' }),
 };
 
 class AsyncWebSocket {

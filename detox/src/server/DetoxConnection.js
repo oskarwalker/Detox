@@ -23,8 +23,6 @@ class DetoxConnection {
     this._onError = this._onError.bind(this);
     this._onClose = this._onClose.bind(this);
 
-    this._sendActionPromise = Promise.resolve();
-
     this._log = logger.child({ trackingId: socket.remotePort });
     this._sessionManager = sessionManager;
     this._webSocket = webSocket;
@@ -46,22 +44,9 @@ class DetoxConnection {
   }
 
   sendAction(action) {
-    this._sendActionPromise = this._sendActionPromise.finally(() => {
-      return this._doSendAction(action);
-    });
-
-    return this._sendActionPromise;
-  }
-
-  _doSendAction(action) {
     const messageAsString = JSON.stringify(action);
     this._log.trace(EVENTS.SEND, messageAsString);
-
-    return new Promise((resolve, reject) => {
-      this._webSocket.send(messageAsString + '\n ', (err) => {
-        err ? reject(err) : resolve();
-      });
-    });
+    this._webSocket.send(messageAsString + '\n ');
   }
 
   _onMessage(rawData) {

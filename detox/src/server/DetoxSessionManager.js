@@ -63,7 +63,7 @@ class DetoxSessionManager {
    * @param {WebSocket} webSocket
    */
   unregisterConnection(webSocket) {
-    if (!this._assertWebSocketIsUsed()) {
+    if (!this._assertWebSocketIsUsed(webSocket)) {
       return;
     }
 
@@ -83,30 +83,27 @@ class DetoxSessionManager {
   }
 
   _assertWebSocketIsNotUsed(webSocket) {
-    if (this._connectionsByWs.has(webSocket)) {
-      this._invariant('Cannot register the same WebSocket instance twice.');
+    if (!this._connectionsByWs.has(webSocket)) {
       return true;
     }
 
-    return false;
+    this._invariant('Cannot register the same WebSocket instance twice.');
   }
 
   _assertWebSocketIsUsed(webSocket) {
-    if (!this._connectionsByWs.has(webSocket)) {
-      this._invariant('Cannot unregister an unknown WebSocket instance.');
+    if (this._connectionsByWs.has(webSocket)) {
       return true;
     }
 
-    return false;
+    this._invariant('Cannot unregister an unknown WebSocket instance.');
   }
 
   _assertConnectionIsNotInSession(connection) {
-    if (this._sessionsByConnection.has(connection)) {
-      this._invariant('Cannot login the same WebSocket instance twice into the same session.');
+    if (!this._sessionsByConnection.has(connection)) {
       return true;
     }
 
-    return false;
+    this._invariant('Cannot login the same WebSocket instance twice into the same session.');
   }
 
   _invariant(errorMessage) {

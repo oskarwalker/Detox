@@ -55,7 +55,7 @@ class AnonymousConnectionHandler {
       session,
     }));
 
-    this.sendAction({
+    this._api.sendAction({
       ...action,
       type: 'loginSuccess',
     });

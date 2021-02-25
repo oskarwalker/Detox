@@ -1,15 +1,15 @@
 const DetoxRuntimeError = require('../../errors/DetoxRuntimeError');
-const logger = require('../../utils/logger');
 
 class TesterConnectionHandler {
   constructor({ api, session }) {
     this._api = api;
-    this._session = session;
-    this._log = logger.child({
-      __filename: 'DetoxConnection.js',
+    this._api.appendLogDetails({
       trackingId: 'tester',
+      role: 'tester',
       sessionId: session.id,
     });
+
+    this._session = session;
   }
 
   handle(action) {
