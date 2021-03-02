@@ -3,7 +3,7 @@ package com.wix.detox.espresso.scroll
 import android.view.MotionEvent
 import android.view.ViewConfiguration
 import androidx.test.espresso.UiController
-import com.wix.detox.espresso.common.MotionEvents
+import com.wix.detox.espresso.action.common.MotionEvents
 
 /**
  * A detox-swiper that, given the total expected motions, tries to swipe fast and yet avoid an

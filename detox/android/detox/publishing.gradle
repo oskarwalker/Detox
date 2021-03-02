@@ -1,0 +1,249 @@
+apply plugin: 'maven-publish'
+apply plugin: 'kotlin-android'
+apply plugin: 'org.jetbrains.dokka'
+apply plugin: 'signing'
+apply from: './publish-pom.gradle'
+
+String TARGET_LOCAL_DIR = "$buildDir/../../../Detox-android"
+String TARGET_MAVEN_CENTRAL_URL = 'https://oss.sonatype.org/service/local/staging/deploy/maven2'
+
+String PUB_FLAVOUR_FULL_DETOX = 'full'
+String PUB_FLAVOUR_DETOX_NATIVE = 'coreNative'
+
+String _versionName = System.getProperty('version')
+String _flavour = System.getProperty('pubFlavour', PUB_FLAVOUR_FULL_DETOX)
+
+String _mavenRepoUrl
+Map _mavenCredentials
+
+def _selectedVariant
+
+def initPublishing = {
+    switch (_flavour) {
+        case PUB_FLAVOUR_FULL_DETOX:
+            _mavenRepoUrl = TARGET_LOCAL_DIR
+            _mavenCredentials = null
+            break
+
+        case PUB_FLAVOUR_DETOX_NATIVE:
+            _mavenRepoUrl = TARGET_MAVEN_CENTRAL_URL
+            _mavenCredentials = [
+                    // This should come from ~/.gradle.properties
+                    username: sonatypeUsername,
+                    password: sonatypePassword,
+            ]
+            break
+
+        default:
+            assertNull(_flavour, "Don\'t know how to publish by flavour '${_flavour}'. Try '${PUB_FLAVOUR_FULL_DETOX}' or '${PUB_FLAVOUR_DETOX_NATIVE}'.")
+            break
+    }
+}
+
+def onPrePublishing = {
+    assertDefined(_versionName, "Publishing: Version not specified (run 'gradle publish' with a -Dversion=1.2.3 argument)")
+    logger.lifecycle("Publishing '$_versionName' to: ${_mavenRepoUrl}, based on build-variant '${_selectedVariant.name}'")
+}
+
+def shouldPublishVariant = {
+    return isReleaseVariant(it) && isVariantOfProductFlavour(it, _flavour)
+}
+
+initPublishing()
+
+// Dokka is the official javadoc equivalent that supports kotlin KDoc (see https://github.com/Kotlin/dokka)
+dokka {
+
+    // Note: this only remains valid as long as we don't move kotlin code to src/main/kotlin instead of src/main/java.
+    // Will have to keep this up to date if we decided to do so.
+    sourceDirs = files(android.sourceSets.main.java.srcDirs)
+
+    // Nothing to add to what kotlinTasks() resolves on its own
+//    classpath = []
+//    classpath += files(android.bootClasspath)
+//    classpath += files(project.configurations.getByName('compile').asList())
+//    classpath += files(android.libraryVariants.collect { variant ->
+//        variant.javaCompile.classpath.files
+//    }.flatten())
+
+    reportUndocumented = false
+    skipEmptyPackages = true
+
+    outputFormat = 'javadoc' // https://github.com/Kotlin/dokka#output-formats
+    outputDirectory = "$buildDir/dokkaDoc" // Temp 'exploded' dir for .jar creation (i.e. by dokkaDocJar task)
+
+    def suppressedPackages = ["android_libs", "com.wix.detox.espresso.common.annot"]
+    for (String packagePrefix: suppressedPackages) {
+        packageOptions {
+            prefix = packagePrefix
+            suppress = true
+        }
+    }
+
+    // Side note / TODO:
+    // Dokka outputs R and BuildConfig; currently, there's nothing to do about it, as issues such as
+    // this on - https://github.com/Kotlin/dokka/issues/419 are still open :-/
+    // We might want to revisit this in the future -- see if they've decided to export a custom classes
+    // suppression config var or something.
+}
+
+task dokkaDocJar(type: Jar, dependsOn: dokka) {
+    from "$buildDir/dokkaDoc"
+    classifier = 'javadoc'
+}
+
+task sourcesJar(type: Jar) {
+    from android.sourceSets.main.java.srcDirs
+    classifier = 'sources'
+}
+
+artifacts {
+    archives dokkaDocJar
+    archives sourcesJar
+}
+
+signing {
+    sign configurations.archives
+}
+
+project.afterEvaluate {
+    project.tasks.all { Task task ->
+        android.libraryVariants.all { variant ->
+            String variantName = variant.name.capitalize()
+            if (task.name == "publishMaven${variantName}AarPublicationToMavenRepository") {
+                task.dependsOn "assemble${variantName}"
+                task.dependsOn project.tasks.signArchives
+
+                // NOTE: Must "inject" this before actual publishing task run instead of inside publications { ... } closure (see
+                // below) because publications runs in the configuration phase, and this is only run if actual publication is
+                // going to be made.
+                task.doFirst {
+                    onPrePublishing()
+                }
+            }
+        }
+    }
+}
+
+publishing {
+    repositories {
+        maven {
+            url _mavenRepoUrl
+            if (_mavenCredentials != null) {
+                credentials {
+                    username _mavenCredentials.username
+                    password _mavenCredentials.password
+                }
+            }
+        }
+    }
+
+    publications {
+        android.libraryVariants.all { variant ->
+            if (shouldPublishVariant(variant)) {
+                _selectedVariant = variant
+
+                "maven${variant.name.capitalize()}Aar"(MavenPublication) {
+                    groupId 'com.wix'
+                    artifactId 'detox'
+                    version "$_versionName"
+
+                    // Register built .aar as published artifact
+                    variant.outputs.forEach { output ->
+                        artifact output.outputFile
+                    }
+
+                    // Register sources, javadoc as published artifacts
+                    artifact sourcesJar
+                    artifact dokkaDocJar
+
+                    // Add detox package metadata to the .pom
+                    pom {
+                        name = 'Detox'
+                        description = 'Gray box end-to-end testing and automation library for mobile apps'
+                        url = 'https://github.com/wix/Detox'
+                        scm {
+                            connection = 'scm:git:git://github.com/wix/detox.git'
+                            developerConnection = 'scm:git:git@github.com/wix/detox.git'
+                            url = 'https://github.com/wix/detox'
+                        }
+                        licenses {
+                            license {
+                                name = 'The MIT License'
+                                url = 'https://github.com/wix/Detox/blob/master/LICENSE'
+                            }
+                        }
+                        developers {
+                            developer {
+                                name = 'WixMobile'
+                                email = 'mobile1@wix.com'
+                            }
+                            developer {
+                                name = 'd4vidi'
+                                email = 'amitd@wix.com'
+                            }
+                        }
+                    }
+
+                    // Add detox dependencies to the .pom
+                    buildPomXmlDependencies(pom, configurations)
+
+                    // Register *signed* pom file as published artifact
+                    pom.withXml {
+                        def pomFile = file("${project.buildDir}/generated-pom.xml")
+                        writeTo(pomFile) // Need to force-write so as to have the signature generated over the finalized content
+
+                        def pomAscFile = signing.sign(pomFile).signatureFiles[0]
+                        artifact(pomAscFile) {
+                            classifier = null
+                            extension = 'pom.asc'
+                        }
+                    }
+
+                    // Register *signed* aar file as published artifact
+                    variant.outputs.forEach { output ->
+                        def aarFile = output.outputFile
+                        def aarAscFile = signing.sign(aarFile).signatureFiles[0]
+                        artifact(aarAscFile) {
+                            classifier = null
+                            extension = 'aar.asc'
+                        }
+                    }
+
+                    // Register *signed* doc & sources jars as published artifacts
+                    project.tasks.signArchives.signatureFiles.each {
+                        artifact(it) {
+                            def matcher = (it.file =~ /-(sources|javadoc)\.jar\.asc$/)
+                            if (matcher.find()) {
+                                classifier = matcher.group(1)
+                            } else {
+                                classifier = null
+                            }
+                            extension = 'jar.asc'
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private static def isReleaseVariant(variant) {
+    return variant.buildType.name == 'release'
+}
+
+private static def isVariantOfProductFlavour(variant, flavourName) {
+    return variant.productFlavors.name.find { name -> name == flavourName } != null
+}
+
+private static def assertDefined(target, message) {
+    if (target == null) {
+        throw new IllegalArgumentException(message)
+    }
+}
+
+private static def assertNull(target, message) {
+    if (target != null) {
+        throw new IllegalArgumentException(message)
+    }
+}

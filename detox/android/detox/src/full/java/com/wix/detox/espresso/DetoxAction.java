@@ -2,7 +2,6 @@ package com.wix.detox.espresso;
 
 import android.view.View;
 
-import com.wix.detox.common.DetoxErrors;
 import com.wix.detox.common.DetoxErrors.DetoxRuntimeException;
 import com.wix.detox.common.DetoxErrors.StaleActionException;
 import com.wix.detox.espresso.action.DetoxMultiTap;
@@ -20,17 +19,11 @@ import androidx.test.espresso.ViewAction;
 import androidx.test.espresso.action.CoordinatesProvider;
 import androidx.test.espresso.action.GeneralClickAction;
 import androidx.test.espresso.action.GeneralLocation;
-import androidx.test.espresso.action.GeneralSwipeAction;
 import androidx.test.espresso.action.Press;
-import androidx.test.espresso.action.ViewActions;
 
 import static androidx.test.espresso.action.ViewActions.actionWithAssertions;
 import static androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom;
 import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
-import static com.wix.detox.espresso.common.annot.MotionDefs.MOTION_DIR_DOWN;
-import static com.wix.detox.espresso.common.annot.MotionDefs.MOTION_DIR_LEFT;
-import static com.wix.detox.espresso.common.annot.MotionDefs.MOTION_DIR_RIGHT;
-import static com.wix.detox.espresso.common.annot.MotionDefs.MOTION_DIR_UP;
 import static org.hamcrest.Matchers.allOf;
 
 

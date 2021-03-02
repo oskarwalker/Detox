@@ -5,19 +5,15 @@ import android.os.Handler;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Choreographer;
-import android.view.View;
 
 import com.wix.detox.espresso.common.utils.UiControllerUtils;
 
-import org.hamcrest.core.IsAnything;
 import org.joor.Reflect;
 import org.joor.ReflectException;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import androidx.test.espresso.Espresso;
-import androidx.test.espresso.ViewInteraction;
 import androidx.test.platform.app.InstrumentationRegistry;
 
 /**

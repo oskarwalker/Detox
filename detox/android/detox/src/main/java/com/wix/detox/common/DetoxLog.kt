@@ -1,3 +1,5 @@
+@file:JvmName("DetoxLog")
+
 package com.wix.detox.common
 
 import android.util.Log
@@ -21,5 +23,7 @@ class DetoxLog {
 
     companion object {
         val instance = DetoxLog()
+
+        const val LOG_TAG = "Detox"
     }
 }

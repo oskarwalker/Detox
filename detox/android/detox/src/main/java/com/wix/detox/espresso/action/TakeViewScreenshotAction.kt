@@ -6,8 +6,8 @@ import androidx.test.espresso.UiController
 import androidx.test.espresso.ViewAction
 import com.wix.detox.common.ViewScreenshot
 import com.wix.detox.espresso.ActionWithResult
-import com.wix.detox.espresso.DetoxMatcher
 import org.hamcrest.Matcher
+import org.hamcrest.Matchers
 
 class TakeViewScreenshotAction(private val viewScreenshot: ViewScreenshot = ViewScreenshot())
     : ViewAction, ActionWithResult {
@@ -21,5 +21,5 @@ class TakeViewScreenshotAction(private val viewScreenshot: ViewScreenshot = View
 
     override fun getResult() = result
     override fun getDescription() = "View screenshot"
-    override fun getConstraints(): Matcher<View> = DetoxMatcher.matcherForNotNull()
+    override fun getConstraints(): Matcher<View> = Matchers.notNullValue(View::class.java)
 }
