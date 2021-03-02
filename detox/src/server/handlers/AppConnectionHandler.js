@@ -1,15 +1,9 @@
 const DetoxRuntimeError = require('../../errors/DetoxRuntimeError');
+const RegisteredConnectionHandler = require('./RegisteredConnectionHandler');
 
-class AppConnectionHandler {
+class AppConnectionHandler extends RegisteredConnectionHandler {
   constructor({ api, session }) {
-    this._api = api;
-    this._api.appendLogDetails({
-      trackingId: 'app',
-      role: 'app',
-      sessionId: session.id,
-    });
-
-    this._session = session;
+    super({ api, session, role: 'app' });
   }
 
   handle(action) {

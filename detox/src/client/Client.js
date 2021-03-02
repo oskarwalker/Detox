@@ -1,7 +1,9 @@
 const _ = require('lodash');
+const util = require('util');
 const AsyncWebSocket = require('./AsyncWebSocket');
 const actions = require('./actions/actions');
 const Deferred = require('../utils/Deferred');
+const DetoxInvariantError = require('../errors/DetoxInvariantError');
 const log = require('../utils/logger').child({ __filename });
 const { asError, createErrorWithUserStack, replaceErrorStack } = require('../utils/errorUtils');
 
@@ -27,6 +29,7 @@ class Client {
     this.setEventCallback('ready', () => {
       this._whenReady.resolve();
     });
+    this.setEventCallback('error', this._onUnhandledErrorFromServer.bind(this));
     this.setEventCallback('AppNonresponsiveDetected', this._onNonresnponsivenessEvent.bind(this));
     this.setEventCallback('AppWillTerminateWithError', ({ params }) => {
       this.pandingAppCrash = params.errorDetails;
@@ -198,6 +201,15 @@ class Client {
 
     log.warn({ event: 'PENDING_REQUESTS'}, dump);
     this.ws.resetInFlightPromises();
+  }
+
+  _onUnhandledErrorFromServer(result) {
+    if (!result || !result.params || !result.params.error) {
+      const err = new DetoxInvariantError('Received an empty error message from Detox Server:\n' + util.inspect(result));
+      log.error({ event: 'ERROR' }, err.toString());
+    } else {
+      log.error({ event: 'ERROR' }, result.params.error);
+    }
   }
 
   _onNonresnponsivenessEvent({ params }) {

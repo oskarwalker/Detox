@@ -76,12 +76,15 @@ class DetoxConnection {
         this._handler.handle(action);
       } catch (handlerError) {
         if (this._handler.onError) {
+          console.log(this._handler.onError.toString())
           this._handler.onError(handlerError, action);
+          console.log('SURVIVED');
         } else {
           throw handlerError;
         }
       }
     } catch (error) {
+      console.log('SURVIVED TWICE');
       this._log.warn({ ...EVENTS.ERROR, err: error }, `${error}`);
     }
   }
